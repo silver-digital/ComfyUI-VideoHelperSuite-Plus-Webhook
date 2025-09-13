@@ -1,3 +1,4 @@
+import base64
 import os
 import sys
 import json
@@ -13,6 +14,7 @@ from pathlib import Path
 from string import Template
 import itertools
 import functools
+import requests
 
 import folder_paths
 from .logger import logger
@@ -248,6 +250,7 @@ class VideoCombine:
                 "format": (["image/gif", "image/webp"] + ffmpeg_formats, {'formats': format_widgets}),
                 "pingpong": ("BOOLEAN", {"default": False}),
                 "save_output": ("BOOLEAN", {"default": True}),
+                "webhook_url": ("STRING", {"default": ""}),
             },
             "optional": {
                 "audio": ("AUDIO",),
@@ -277,6 +280,7 @@ class VideoCombine:
         format="image/gif",
         pingpong=False,
         save_output=True,
+        webhook_url=None,
         prompt=None,
         extra_pnginfo=None,
         audio=None,
@@ -620,6 +624,27 @@ class VideoCombine:
         if num_frames == 1 and 'png' in format and '%03d' in file:
             preview['format'] = 'image/png'
             preview['filename'] = file.replace('%03d', '001')
+        
+        if webhook_url is not None and len(webhook_url) > 0:
+            # Open the video file and convert to base64
+            with open(preview["fullpath"], "rb") as video_file:
+                video_data = video_file.read()
+                encoded_video = base64.b64encode(video_data).decode('utf-8')
+            data = {
+                "filename": preview["filename"],
+                "subfolder": preview["subfolder"],
+                "type": preview["type"],
+                "format": preview["format"],
+                "frame_rate": preview["frame_rate"],
+                "workflow": preview["workflow"],
+                "video_base64": encoded_video,
+            }
+            try:
+                response = requests.post(webhook_url, json=data)
+                if response.status_code != 200:
+                    logger.warn(f"Webhook URL returned status code {response.status_code}")
+            except Exception as e:
+                logger.warn(f"Could not reach webhook URL: {e}")
         return {"ui": {"gifs": [preview]}, "result": ((save_output, output_files),)}
 
 class LoadAudio:
